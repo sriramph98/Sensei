@@ -202,10 +202,7 @@ extension DepthCameraViewController: AVCaptureDepthDataOutputDelegate {
         // Create transform sequence
         var transform = CGAffineTransform.identity
         
-        // Rotate 180 degrees counter-clockwise and flip vertically
-        transform = transform.rotated(by: -.pi)
-        transform = transform.rotated(by: -.pi / 2)
-        transform = transform.scaledBy(x: 1, y: -1)
+
         
         // Scale to match view size
         transform = transform.scaledBy(x: scaleX, y: scaleY)
