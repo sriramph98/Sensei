@@ -128,34 +128,35 @@ class DepthCameraViewController: UIViewController {
         setupDetectedObjectsView(in: uiContainer)
         
         // Create depth legend
-        setupDepthLegend(in: uiContainer)
+        setupDepthLegend()
     }
     
-    private func setupDepthLegend(in container: UIView) {
+    private func setupDepthLegend() {
         // Create legend container
-        depthLegendView = UIView(frame: CGRect(x: 20, y: container.bounds.height - 120, width: 40, height: 100))
+        depthLegendView = UIView(frame: CGRect(x: 20, y: view.bounds.height - 120, width: 40, height: 100))
         depthLegendView.backgroundColor = UIColor.black.withAlphaComponent(0.5)
         depthLegendView.layer.cornerRadius = 8
-        container.addSubview(depthLegendView)
+        view.addSubview(depthLegendView)
         
         // Create gradient view
         let gradientView = UIView(frame: CGRect(x: 5, y: 5, width: 30, height: 90))
         let gradientLayer = CAGradientLayer()
         gradientLayer.frame = gradientView.bounds
         gradientLayer.colors = [
-            UIColor.red.cgColor,
-            UIColor.yellow.cgColor,
-            UIColor.green.cgColor,
-            UIColor.blue.cgColor
+            UIColor(red: 1.0, green: 0.0, blue: 0.0, alpha: 1.0).cgColor,  // Red (close)
+            UIColor(red: 1.0, green: 0.5, blue: 0.0, alpha: 1.0).cgColor,  // Orange
+            UIColor(red: 1.0, green: 1.0, blue: 0.0, alpha: 1.0).cgColor,  // Yellow
+            UIColor(red: 0.0, green: 1.0, blue: 1.0, alpha: 1.0).cgColor,  // Cyan
+            UIColor(red: 0.0, green: 0.0, blue: 1.0, alpha: 1.0).cgColor   // Blue (far)
         ]
-        gradientLayer.locations = [0.0, 0.33, 0.66, 1.0]
+        gradientLayer.locations = [0.0, 0.25, 0.5, 0.75, 1.0]
         gradientLayer.startPoint = CGPoint(x: 0.5, y: 1.0)
         gradientLayer.endPoint = CGPoint(x: 0.5, y: 0.0)
         gradientView.layer.addSublayer(gradientLayer)
         depthLegendView.addSubview(gradientView)
         
-        // Create depth labels
-        let distances = ["0.5m", "1.5m", "2.5m", "3.5m"]
+        // Create depth labels with more granular distances
+        let distances = ["0.3m", "0.6m", "1.0m", "1.5m"]
         for (index, distance) in distances.enumerated() {
             let label = UILabel(frame: CGRect(x: 40, y: CGFloat(index) * 30, width: 60, height: 20))
             label.text = distance
@@ -463,26 +464,36 @@ extension DepthCameraViewController: AVCaptureDepthDataOutputDelegate {
         // Apply the transform
         let transformedImage = ciImage.transformed(by: transform)
         
-        // Create a color filter for depth visualization
+        // Create color filter for depth visualization
         let colorFilter = CIFilter(name: "CIColorMap")!
         colorFilter.setValue(transformedImage, forKey: kCIInputImageKey)
         
-        // Create a custom color gradient for depth visualization
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        let colors: [CGFloat] = [
-            1.0, 0.0, 0.0, 1.0, // Red
-            1.0, 1.0, 0.0, 1.0, // Yellow
-            0.0, 1.0, 0.0, 1.0, // Green
-            0.0, 0.0, 1.0, 1.0  // Blue
-        ]
-        let locations: [CGFloat] = [0.0, 0.33, 0.66, 1.0]
-        let gradient = CGGradient(colorSpace: colorSpace, colorComponents: colors, locations: locations, count: 4)!
+        // Create gradient for depth visualization
+        let gradientFilter = CIFilter(name: "CILinearGradient")!
+        gradientFilter.setValue(CIColor(red: 1, green: 0, blue: 0), forKey: "inputColor0") // Red for close objects
+        gradientFilter.setValue(CIColor(red: 0, green: 0, blue: 1), forKey: "inputColor1") // Blue for far objects
         
-        let context = CIContext()
-        if let cgImage = context.createCGImage(transformedImage, from: transformedImage.extent) {
-            let uiImage = UIImage(cgImage: cgImage)
-            DispatchQueue.main.async {
-                self.depthView.image = uiImage
+        // Apply false color filter
+        let falseColor = CIFilter(name: "CIFalseColor")!
+        falseColor.setValue(transformedImage, forKey: kCIInputImageKey)
+        falseColor.setValue(CIColor(red: 1, green: 0, blue: 0), forKey: "inputColor0") // Close objects - Red
+        falseColor.setValue(CIColor(red: 0, green: 0, blue: 1), forKey: "inputColor1") // Far objects - Blue
+        
+        if let outputImage = falseColor.outputImage {
+            // Add color adjustments for better visualization
+            let colorControls = CIFilter(name: "CIColorControls")!
+            colorControls.setValue(outputImage, forKey: kCIInputImageKey)
+            colorControls.setValue(1.2, forKey: kCIInputSaturationKey) // Increase saturation
+            colorControls.setValue(1.1, forKey: kCIInputContrastKey)   // Increase contrast
+            
+            if let finalImage = colorControls.outputImage {
+                let context = CIContext()
+                if let cgImage = context.createCGImage(finalImage, from: finalImage.extent) {
+                    let uiImage = UIImage(cgImage: cgImage)
+                    DispatchQueue.main.async {
+                        self.depthView.image = uiImage
+                    }
+                }
             }
         }
     }
