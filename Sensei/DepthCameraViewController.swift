@@ -52,10 +52,17 @@ class DepthCameraViewController: UIViewController {
     private var lastHapticTime: TimeInterval = 0
     private let hapticCooldown: TimeInterval = 0.2  // Minimum time between haptics
     
+    // Speech synthesis property
+    private let speechSynthesizer = AVSpeechSynthesizer()
+    private var lastSpokenTime: TimeInterval = 0
+    private let minimumTimeBetweenSpeeches: TimeInterval = 1.0  // Minimum 1 second between speeches
+    private var latestDetection: String?
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         setupInitialUI()
         setupHapticFeedback()
+        setupTapGesture()
         checkCameraPermission()
     }
     
@@ -218,6 +225,11 @@ class DepthCameraViewController: UIViewController {
         detectedObjectsView.addSubview(detectedObjectsLabel)
     }
     
+    private func setupTapGesture() {
+        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap))
+        view.addGestureRecognizer(tapGesture)
+    }
+    
     @objc private func hapticToggleChanged(_ sender: UISwitch) {
         isHapticEnabled = sender.isOn
         if sender.isOn {
@@ -229,6 +241,14 @@ class DepthCameraViewController: UIViewController {
     @objc private func objectDetectionToggleChanged(_ sender: UISwitch) {
         isObjectDetectionEnabled = sender.isOn
         detectedObjectsView.isHidden = !sender.isOn
+    }
+    
+    @objc private func handleTap() {
+        guard let latestDetection = latestDetection else {
+            speakText("No objects detected")
+            return
+        }
+        speakText(latestDetection)
     }
     
     private func setupCamera() {
@@ -374,12 +394,39 @@ class DepthCameraViewController: UIViewController {
                 }
                 .joined(separator: ", ")
             
+            // Store the most confident detection for speech
+            if let topResult = results.first {
+                latestDetection = "\(topResult.identifier) with \(Int(topResult.confidence * 100))% confidence"
+            } else {
+                latestDetection = nil
+            }
+            
             DispatchQueue.main.async {
                 self.detectedObjectsLabel.text = detectedObjects.isEmpty ? "No objects detected" : "Detected: \(detectedObjects)"
             }
         } catch {
             print("Failed to perform object detection: \(error)")
+            latestDetection = nil
         }
+    }
+    
+    private func speakText(_ text: String) {
+        let currentTime = CACurrentMediaTime()
+        guard currentTime - lastSpokenTime >= minimumTimeBetweenSpeeches else { return }
+        
+        // Stop any ongoing speech
+        if speechSynthesizer.isSpeaking {
+            speechSynthesizer.stopSpeaking(at: .immediate)
+        }
+        
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.rate = 0.5
+        utterance.pitchMultiplier = 1.0
+        utterance.volume = 1.0
+        utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
+        
+        speechSynthesizer.speak(utterance)
+        lastSpokenTime = currentTime
     }
 }
 
