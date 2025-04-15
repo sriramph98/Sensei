@@ -11,7 +11,17 @@ import SwiftUI
 struct SenseiApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            DepthCameraView()
         }
+    }
+}
+
+struct DepthCameraView: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> DepthCameraViewController {
+        return DepthCameraViewController()
+    }
+    
+    func updateUIViewController(_ uiViewController: DepthCameraViewController, context: Context) {
+        // Update the view controller if needed
     }
 }
