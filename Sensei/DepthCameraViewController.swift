@@ -244,6 +244,8 @@ class DepthCameraViewController: UIViewController {
     }
     
     @objc private func handleTap() {
+        guard isObjectDetectionEnabled else { return }
+        
         guard let latestDetection = latestDetection else {
             speakText("No objects detected")
             return
