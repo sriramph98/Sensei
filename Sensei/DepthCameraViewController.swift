@@ -1,6 +1,8 @@
 import UIKit
 import AVFoundation
 import ARKit
+import Vision
+import VisionKit
 
 class DepthCameraViewController: UIViewController {
     private var session: AVCaptureSession!
@@ -11,6 +13,25 @@ class DepthCameraViewController: UIViewController {
     private var statusLabel: UILabel!
     private var depthLegendView: UIView!
     private var depthLegendLabels: [UILabel] = []
+    
+    // Object detection properties
+    private var objectDetectionToggle: UISwitch!
+    private var objectDetectionLabel: UILabel!
+    private var detectedObjectsView: UIView!
+    private var detectedObjectsLabel: UILabel!
+    private var isObjectDetectionEnabled: Bool {
+        get {
+            return UserDefaults.standard.bool(forKey: "isObjectDetectionEnabled")
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "isObjectDetectionEnabled")
+        }
+    }
+    private lazy var objectDetectionRequest: VNClassifyImageRequest = {
+        let request = VNClassifyImageRequest()
+        request.revision = VNClassifyImageRequestRevision1
+        return request
+    }()
     
     // Add haptic toggle
     private var hapticToggle: UISwitch!
@@ -93,6 +114,12 @@ class DepthCameraViewController: UIViewController {
         // Create haptic toggle
         setupHapticToggle(in: uiContainer)
         
+        // Create object detection toggle
+        setupObjectDetectionToggle(in: uiContainer)
+        
+        // Create detected objects view
+        setupDetectedObjectsView(in: uiContainer)
+        
         // Create depth legend
         setupDepthLegend(in: uiContainer)
     }
@@ -153,12 +180,55 @@ class DepthCameraViewController: UIViewController {
         containerView.addSubview(hapticToggle)
     }
     
+    private func setupObjectDetectionToggle(in container: UIView) {
+        // Create container view for object detection controls
+        let containerView = UIView(frame: CGRect(x: 20, y: 140, width: container.bounds.width - 40, height: 40))
+        containerView.backgroundColor = UIColor.black.withAlphaComponent(0.5)
+        containerView.layer.cornerRadius = 8
+        container.addSubview(containerView)
+        
+        // Create object detection label
+        objectDetectionLabel = UILabel(frame: CGRect(x: 15, y: 0, width: 120, height: 40))
+        objectDetectionLabel.text = "Object Detection"
+        objectDetectionLabel.textColor = .white
+        objectDetectionLabel.font = UIFont.systemFont(ofSize: 14, weight: .medium)
+        containerView.addSubview(objectDetectionLabel)
+        
+        // Create object detection toggle switch
+        objectDetectionToggle = UISwitch(frame: CGRect(x: containerView.bounds.width - 65, y: 5, width: 51, height: 31))
+        objectDetectionToggle.isOn = isObjectDetectionEnabled
+        objectDetectionToggle.addTarget(self, action: #selector(objectDetectionToggleChanged), for: .valueChanged)
+        containerView.addSubview(objectDetectionToggle)
+    }
+    
+    private func setupDetectedObjectsView(in container: UIView) {
+        // Create container for detected objects
+        detectedObjectsView = UIView(frame: CGRect(x: 20, y: container.bounds.height - 180, width: container.bounds.width - 40, height: 50))
+        detectedObjectsView.backgroundColor = UIColor.black.withAlphaComponent(0.5)
+        detectedObjectsView.layer.cornerRadius = 8
+        container.addSubview(detectedObjectsView)
+        
+        // Create label for detected objects
+        detectedObjectsLabel = UILabel(frame: CGRect(x: 15, y: 0, width: detectedObjectsView.bounds.width - 30, height: 50))
+        detectedObjectsLabel.textColor = .white
+        detectedObjectsLabel.font = UIFont.systemFont(ofSize: 14, weight: .medium)
+        detectedObjectsLabel.text = "No objects detected"
+        detectedObjectsLabel.textAlignment = .left
+        detectedObjectsLabel.numberOfLines = 2
+        detectedObjectsView.addSubview(detectedObjectsLabel)
+    }
+    
     @objc private func hapticToggleChanged(_ sender: UISwitch) {
         isHapticEnabled = sender.isOn
         if sender.isOn {
             // Provide feedback that haptics are enabled
             lightHaptic.impactOccurred()
         }
+    }
+    
+    @objc private func objectDetectionToggleChanged(_ sender: UISwitch) {
+        isObjectDetectionEnabled = sender.isOn
+        detectedObjectsView.isHidden = !sender.isOn
     }
     
     private func setupCamera() {
@@ -257,12 +327,25 @@ class DepthCameraViewController: UIViewController {
         super.viewDidLayoutSubviews()
         previewLayer?.frame = view.bounds
         depthView.frame = view.bounds
-        statusLabel.frame = CGRect(x: 20, y: 50, width: view.bounds.width - 40, height: 30)
         
-        // Update depth legend position
-        depthLegendView.frame = CGRect(x: 20, y: view.bounds.height - 120, width: 40, height: 100)
-        for (index, label) in depthLegendLabels.enumerated() {
-            label.frame = CGRect(x: 45, y: CGFloat(index) * 30, width: 60, height: 20)
+        if let container = statusLabel.superview {
+            statusLabel.frame = CGRect(x: 20, y: 50, width: container.bounds.width - 40, height: 30)
+            
+            // Update object detection views
+            if let containerView = objectDetectionToggle?.superview {
+                containerView.frame = CGRect(x: 20, y: 140, width: container.bounds.width - 40, height: 40)
+                objectDetectionLabel?.frame = CGRect(x: 15, y: 0, width: 120, height: 40)
+                objectDetectionToggle?.frame = CGRect(x: containerView.bounds.width - 65, y: 5, width: 51, height: 31)
+            }
+            
+            detectedObjectsView?.frame = CGRect(x: 20, y: container.bounds.height - 180, width: container.bounds.width - 40, height: 50)
+            detectedObjectsLabel?.frame = CGRect(x: 15, y: 0, width: (detectedObjectsView?.bounds.width ?? 0) - 30, height: 50)
+            
+            // Update depth legend position
+            depthLegendView.frame = CGRect(x: 20, y: container.bounds.height - 120, width: 40, height: 100)
+            for (index, label) in depthLegendLabels.enumerated() {
+                label.frame = CGRect(x: 45, y: CGFloat(index) * 30, width: 60, height: 20)
+            }
         }
         
         // Update preview layer orientation
@@ -270,6 +353,32 @@ class DepthCameraViewController: UIViewController {
             if connection.isVideoOrientationSupported {
                 connection.videoOrientation = .portrait
             }
+        }
+    }
+    
+    private func detectObjects(in image: CVPixelBuffer) {
+        guard isObjectDetectionEnabled else { return }
+        
+        let imageRequestHandler = VNImageRequestHandler(cvPixelBuffer: image, orientation: .up)
+        
+        do {
+            try imageRequestHandler.perform([objectDetectionRequest])
+            
+            guard let results = objectDetectionRequest.results else { return }
+            
+            // Process detection results
+            let detectedObjects = results
+                .prefix(3)  // Show top 3 detected objects
+                .map { observation -> String in
+                    return "\(observation.identifier) (\(Int(observation.confidence * 100))%)"
+                }
+                .joined(separator: ", ")
+            
+            DispatchQueue.main.async {
+                self.detectedObjectsLabel.text = detectedObjects.isEmpty ? "No objects detected" : "Detected: \(detectedObjects)"
+            }
+        } catch {
+            print("Failed to perform object detection: \(error)")
         }
     }
 }
@@ -368,6 +477,8 @@ extension DepthCameraViewController: AVCaptureDepthDataOutputDelegate {
 
 extension DepthCameraViewController: AVCaptureVideoDataOutputSampleBufferDelegate {
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        // Handle video frame if needed
+        if output == videoDataOutput, let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
+            detectObjects(in: pixelBuffer)
+        }
     }
 } 
