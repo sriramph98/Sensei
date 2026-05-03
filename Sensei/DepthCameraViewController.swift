@@ -14,6 +14,14 @@ class DepthCameraViewController: UIViewController {
     private var depthLegendView: UIView!
     private var depthLegendLabels: [UILabel] = []
     
+    // Add UI visibility toggle
+    private var uiToggleButton: UIButton!
+    private var isUIHidden: Bool = false {
+        didSet {
+            updateUIVisibility()
+        }
+    }
+    
     // Object detection properties
     private var objectDetectionToggle: UISwitch!
     private var objectDetectionLabel: UILabel!
@@ -111,6 +119,9 @@ class DepthCameraViewController: UIViewController {
         let uiContainer = UIView(frame: view.bounds)
         view.addSubview(uiContainer)
         
+        // Create UI toggle button
+        setupUIToggleButton(in: uiContainer)
+        
         // Create status label
         statusLabel = UILabel(frame: CGRect(x: 20, y: 50, width: view.bounds.width - 40, height: 30))
         statusLabel.textColor = .white
@@ -124,41 +135,77 @@ class DepthCameraViewController: UIViewController {
         // Create object detection toggle
         setupObjectDetectionToggle(in: uiContainer)
         
+        // Create depth legend
+        setupDepthLegend(in: uiContainer)
+        
         // Create detected objects view
         setupDetectedObjectsView(in: uiContainer)
-        
-        // Create depth legend
-        setupDepthLegend()
     }
     
-    private func setupDepthLegend() {
+    private func setupUIToggleButton(in container: UIView) {
+        uiToggleButton = UIButton(type: .system)
+        uiToggleButton.frame = CGRect(x: container.bounds.width - 60, y: 20, width: 40, height: 40)
+        uiToggleButton.setTitle("UI", for: .normal)
+        uiToggleButton.titleLabel?.font = UIFont.systemFont(ofSize: 14, weight: .medium)
+        uiToggleButton.setTitleColor(.white, for: .normal)
+        uiToggleButton.backgroundColor = UIColor.black.withAlphaComponent(0.5)
+        uiToggleButton.layer.cornerRadius = 8
+        uiToggleButton.addTarget(self, action: #selector(toggleUI), for: .touchUpInside)
+        container.addSubview(uiToggleButton)
+    }
+    
+    @objc private func toggleUI() {
+        isUIHidden.toggle()
+    }
+    
+    private func updateUIVisibility() {
+        let alpha: CGFloat = isUIHidden ? 0.0 : 1.0
+        UIView.animate(withDuration: 0.3) {
+            // Hide all UI elements and their containers
+            self.statusLabel.alpha = alpha
+            self.hapticToggle?.alpha = alpha
+            self.hapticLabel?.alpha = alpha
+            self.hapticToggle?.superview?.alpha = alpha  // Hide haptic container
+            self.objectDetectionToggle?.alpha = alpha
+            self.objectDetectionLabel?.alpha = alpha
+            self.objectDetectionToggle?.superview?.alpha = alpha  // Hide object detection container
+            self.detectedObjectsView?.alpha = alpha
+            self.detectedObjectsLabel?.alpha = alpha
+            self.depthLegendView?.alpha = alpha
+            self.depthLegendLabels.forEach { $0.alpha = alpha }
+            self.uiToggleButton.alpha = 1.0  // Keep the toggle button always visible
+        }
+    }
+    
+    private func setupDepthLegend(in container: UIView) {
         // Create legend container
-        depthLegendView = UIView(frame: CGRect(x: 20, y: view.bounds.height - 120, width: 40, height: 100))
+        depthLegendView = UIView(frame: CGRect(x: 20, y: 190, width: 40, height: 100))
         depthLegendView.backgroundColor = UIColor.black.withAlphaComponent(0.5)
         depthLegendView.layer.cornerRadius = 8
-        view.addSubview(depthLegendView)
+        container.addSubview(depthLegendView)
         
         // Create gradient view
         let gradientView = UIView(frame: CGRect(x: 5, y: 5, width: 30, height: 90))
         let gradientLayer = CAGradientLayer()
         gradientLayer.frame = gradientView.bounds
         gradientLayer.colors = [
-            UIColor(red: 1.0, green: 0.0, blue: 0.0, alpha: 1.0).cgColor,  // Red (close)
-            UIColor(red: 1.0, green: 0.5, blue: 0.0, alpha: 1.0).cgColor,  // Orange
-            UIColor(red: 1.0, green: 1.0, blue: 0.0, alpha: 1.0).cgColor,  // Yellow
-            UIColor(red: 0.0, green: 1.0, blue: 1.0, alpha: 1.0).cgColor,  // Cyan
-            UIColor(red: 0.0, green: 0.0, blue: 1.0, alpha: 1.0).cgColor   // Blue (far)
+            UIColor(red: 1.0, green: 0.0, blue: 0.0, alpha: 1.0).cgColor,  // RED (CLOSE)
+            UIColor(red: 0.0, green: 0.0, blue: 1.0, alpha: 1.0).cgColor   // BLUE (FAR)
         ]
-        gradientLayer.locations = [0.0, 0.25, 0.5, 0.75, 1.0]
+        gradientLayer.locations = [0.0, 1.0]
         gradientLayer.startPoint = CGPoint(x: 0.5, y: 1.0)
         gradientLayer.endPoint = CGPoint(x: 0.5, y: 0.0)
         gradientView.layer.addSublayer(gradientLayer)
         depthLegendView.addSubview(gradientView)
         
+        // Clear existing labels
+        depthLegendLabels.forEach { $0.removeFromSuperview() }
+        depthLegendLabels.removeAll()
+        
         // Create depth labels with more granular distances
-        let distances = ["0.3m", "0.6m", "1.0m", "1.5m"]
+        let distances = ["CLOSE", "MID", "FAR"]
         for (index, distance) in distances.enumerated() {
-            let label = UILabel(frame: CGRect(x: 40, y: CGFloat(index) * 30, width: 60, height: 20))
+            let label = UILabel(frame: CGRect(x: 45, y: CGFloat(index) * 45, width: 60, height: 20))
             label.text = distance
             label.textColor = .white
             label.font = UIFont.systemFont(ofSize: 12)
@@ -261,8 +308,10 @@ class DepthCameraViewController: UIViewController {
         // First try to get the LiDAR camera
         guard let device = AVCaptureDevice.default(.builtInLiDARDepthCamera, for: .video, position: .back) else {
             print("LiDAR camera not available")
-            statusLabel.text = "LiDAR camera not available"
-            statusLabel.textColor = .red
+            DispatchQueue.main.async {
+                self.statusLabel.text = "LiDAR camera not available"
+                self.statusLabel.textColor = .red
+            }
             return
         }
         
@@ -283,15 +332,27 @@ class DepthCameraViewController: UIViewController {
             // Connect depth and video outputs
             if let connection = depthDataOutput.connection(with: .depthData) {
                 connection.isEnabled = true
-                if connection.isVideoOrientationSupported {
-                    connection.videoOrientation = .portrait
+                if #available(iOS 17.0, *) {
+                    if connection.isVideoRotationAngleSupported(90) {
+                        connection.videoRotationAngle = 90
+                    }
+                } else {
+                    if connection.isVideoOrientationSupported {
+                        connection.videoOrientation = .portrait
+                    }
                 }
             }
             
             // Set video orientation
             if let connection = videoDataOutput.connection(with: .video) {
-                if connection.isVideoOrientationSupported {
-                    connection.videoOrientation = .portrait
+                if #available(iOS 17.0, *) {
+                    if connection.isVideoRotationAngleSupported(90) {
+                        connection.videoRotationAngle = 90
+                    }
+                } else {
+                    if connection.isVideoOrientationSupported {
+                        connection.videoOrientation = .portrait
+                    }
                 }
             }
             
@@ -299,18 +360,28 @@ class DepthCameraViewController: UIViewController {
             previewLayer = AVCaptureVideoPreviewLayer(session: session)
             previewLayer.frame = view.bounds
             previewLayer.videoGravity = .resizeAspectFill
-            previewLayer.connection?.videoOrientation = .portrait
+            if #available(iOS 17.0, *) {
+                previewLayer.connection?.videoRotationAngle = 90
+            } else {
+                previewLayer.connection?.videoOrientation = .portrait
+            }
             view.layer.insertSublayer(previewLayer, at: 0)  // Insert at index 0 to keep it at the bottom
             
-            // Start the session
-            session.startRunning()
-            statusLabel.text = "Camera running"
-            statusLabel.textColor = .green
+            // Start the session on a background thread
+            DispatchQueue.global(qos: .userInitiated).async {
+                self.session.startRunning()
+                DispatchQueue.main.async {
+                    self.statusLabel.text = "Camera running"
+                    self.statusLabel.textColor = .green
+                }
+            }
             
         } catch {
             print("Error setting up camera: \(error)")
-            statusLabel.text = "Error setting up camera"
-            statusLabel.textColor = .red
+            DispatchQueue.main.async {
+                self.statusLabel.text = "Error setting up camera"
+                self.statusLabel.textColor = .red
+            }
         }
     }
     
@@ -331,19 +402,23 @@ class DepthCameraViewController: UIViewController {
         let currentTime = CACurrentMediaTime()
         guard currentTime - lastHapticTime >= hapticCooldown else { return }
         
-        // Depth thresholds in meters - smaller numbers mean closer objects
-        switch depth {
-        case 0.6...1.0:  // Somewhat close (1m)
-            lightHaptic.impactOccurred()
-        case 0.3...0.6:  // Moderately close (60cm)
-            mediumHaptic.impactOccurred()
-        case 0...0.3:  // Very close (30cm)
-            heavyHaptic.impactOccurred()
-        default:
-            return  // No haptic for distances beyond 1m
+        // Only vibrate for close objects (RED in visualization)
+        if depth < 0.5 {
+            // The closer the object, the stronger the haptic
+            if depth < 0.2 {
+                print("Very close object detected: \(depth)m - Heavy haptic")
+                heavyHaptic.impactOccurred()
+            } else if depth < 0.35 {
+                print("Close object detected: \(depth)m - Medium haptic")
+                mediumHaptic.impactOccurred()
+            } else {
+                print("Moderately close object detected: \(depth)m - Light haptic")
+                lightHaptic.impactOccurred()
+            }
+            lastHapticTime = currentTime
+        } else {
+            print("Object too far: \(depth)m - No haptic")
         }
-        
-        lastHapticTime = currentTime
     }
     
     override func viewDidLayoutSubviews() {
@@ -352,29 +427,68 @@ class DepthCameraViewController: UIViewController {
         depthView.frame = view.bounds
         
         if let container = statusLabel.superview {
-            statusLabel.frame = CGRect(x: 20, y: 50, width: container.bounds.width - 40, height: 30)
+            // Calculate safe area insets
+            let safeArea = view.safeAreaInsets
             
-            // Update object detection views
+            // Update UI toggle button
+            uiToggleButton.frame = CGRect(x: container.bounds.width - 60 - safeArea.right, 
+                                        y: 20 + safeArea.top, 
+                                        width: 40, 
+                                        height: 40)
+            
+            // Update status label
+            statusLabel.frame = CGRect(x: 20 + safeArea.left, 
+                                     y: 50 + safeArea.top, 
+                                     width: container.bounds.width - 40 - safeArea.left - safeArea.right, 
+                                     height: 30)
+            
+            // Update haptic toggle
+            if let containerView = hapticToggle?.superview {
+                containerView.frame = CGRect(x: 20 + safeArea.left, 
+                                           y: 90 + safeArea.top, 
+                                           width: container.bounds.width - 40 - safeArea.left - safeArea.right, 
+                                           height: 40)
+                hapticLabel?.frame = CGRect(x: 15, y: 0, width: 120, height: 40)
+                hapticToggle?.frame = CGRect(x: containerView.bounds.width - 65, y: 5, width: 51, height: 31)
+            }
+            
+            // Update object detection toggle
             if let containerView = objectDetectionToggle?.superview {
-                containerView.frame = CGRect(x: 20, y: 140, width: container.bounds.width - 40, height: 40)
+                containerView.frame = CGRect(x: 20 + safeArea.left, 
+                                           y: 140 + safeArea.top, 
+                                           width: container.bounds.width - 40 - safeArea.left - safeArea.right, 
+                                           height: 40)
                 objectDetectionLabel?.frame = CGRect(x: 15, y: 0, width: 120, height: 40)
                 objectDetectionToggle?.frame = CGRect(x: containerView.bounds.width - 65, y: 5, width: 51, height: 31)
             }
             
-            detectedObjectsView?.frame = CGRect(x: 20, y: container.bounds.height - 180, width: container.bounds.width - 40, height: 50)
-            detectedObjectsLabel?.frame = CGRect(x: 15, y: 0, width: (detectedObjectsView?.bounds.width ?? 0) - 30, height: 50)
-            
-            // Update depth legend position
-            depthLegendView.frame = CGRect(x: 20, y: container.bounds.height - 120, width: 40, height: 100)
+            // Update depth legend
+            depthLegendView.frame = CGRect(x: 20 + safeArea.left, 
+                                         y: 190 + safeArea.top, 
+                                         width: 40, 
+                                         height: 100)
             for (index, label) in depthLegendLabels.enumerated() {
-                label.frame = CGRect(x: 45, y: CGFloat(index) * 30, width: 60, height: 20)
+                label.frame = CGRect(x: 45, y: CGFloat(index) * 45, width: 60, height: 20)
             }
+            
+            // Update detected objects view
+            detectedObjectsView?.frame = CGRect(x: 20 + safeArea.left, 
+                                              y: container.bounds.height - 180 - safeArea.bottom, 
+                                              width: container.bounds.width - 40 - safeArea.left - safeArea.right, 
+                                              height: 50)
+            detectedObjectsLabel?.frame = CGRect(x: 15, y: 0, width: (detectedObjectsView?.bounds.width ?? 0) - 30, height: 50)
         }
         
         // Update preview layer orientation
         if let connection = previewLayer?.connection {
-            if connection.isVideoOrientationSupported {
-                connection.videoOrientation = .portrait
+            if #available(iOS 17.0, *) {
+                if connection.isVideoRotationAngleSupported(90) {
+                    connection.videoRotationAngle = 90
+                }
+            } else {
+                if connection.isVideoOrientationSupported {
+                    connection.videoOrientation = .portrait
+                }
             }
         }
     }
@@ -399,7 +513,7 @@ class DepthCameraViewController: UIViewController {
             
             // Store the most confident detection for speech
             if let topResult = results.first {
-                latestDetection = "\(topResult.identifier) with \(Int(topResult.confidence * 100))% confidence"
+                latestDetection = "\(topResult.identifier)"
             } else {
                 latestDetection = nil
             }
@@ -440,8 +554,14 @@ extension DepthCameraViewController: AVCaptureDepthDataOutputDelegate {
         
         // Get average depth from the center region
         let centerDepth = getAverageCenterDepth(from: depthMap)
+        
+        // Process depth data for visualization and haptic feedback
         if let depth = centerDepth {
+            // Print depth for debugging
+            print("Center depth: \(depth) meters")
+            
             DispatchQueue.main.async {
+                // Trigger haptic feedback based on depth
                 self.generateHapticFeedback(forDepth: depth)
             }
         }
@@ -464,27 +584,18 @@ extension DepthCameraViewController: AVCaptureDepthDataOutputDelegate {
         // Apply the transform
         let transformedImage = ciImage.transformed(by: transform)
         
-        // Create color filter for depth visualization
-        let colorFilter = CIFilter(name: "CIColorMap")!
-        colorFilter.setValue(transformedImage, forKey: kCIInputImageKey)
-        
-        // Create gradient for depth visualization
-        let gradientFilter = CIFilter(name: "CILinearGradient")!
-        gradientFilter.setValue(CIColor(red: 1, green: 0, blue: 0), forKey: "inputColor0") // Red for close objects
-        gradientFilter.setValue(CIColor(red: 0, green: 0, blue: 1), forKey: "inputColor1") // Blue for far objects
-        
-        // Apply false color filter
+        // Apply false color filter - RED for CLOSE, BLUE for FAR
         let falseColor = CIFilter(name: "CIFalseColor")!
         falseColor.setValue(transformedImage, forKey: kCIInputImageKey)
-        falseColor.setValue(CIColor(red: 1, green: 0, blue: 0), forKey: "inputColor0") // Close objects - Red
-        falseColor.setValue(CIColor(red: 0, green: 0, blue: 1), forKey: "inputColor1") // Far objects - Blue
+        falseColor.setValue(CIColor(red: 1, green: 0, blue: 0), forKey: "inputColor0") // CLOSE objects - RED
+        falseColor.setValue(CIColor(red: 0, green: 0, blue: 1), forKey: "inputColor1") // FAR objects - BLUE
         
         if let outputImage = falseColor.outputImage {
             // Add color adjustments for better visualization
             let colorControls = CIFilter(name: "CIColorControls")!
             colorControls.setValue(outputImage, forKey: kCIInputImageKey)
-            colorControls.setValue(1.2, forKey: kCIInputSaturationKey) // Increase saturation
-            colorControls.setValue(1.1, forKey: kCIInputContrastKey)   // Increase contrast
+            colorControls.setValue(1.5, forKey: kCIInputSaturationKey) // Increase saturation
+            colorControls.setValue(1.2, forKey: kCIInputContrastKey)   // Increase contrast
             
             if let finalImage = colorControls.outputImage {
                 let context = CIContext()
